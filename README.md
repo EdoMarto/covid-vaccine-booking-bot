@@ -1,48 +1,40 @@
 # COVID Vaccine Booking Bot
 
-A Python bot that watched a regional COVID‑19 vaccination portal and booked the earliest available
-appointment automatically, instead of refreshing the page by hand for hours.
+A Python bot that watched a regional COVID-19 vaccination portal and booked the first available
+appointment on its own, instead of sitting there refreshing the page for hours.
 
-> **History.** I first wrote this in 2021 to book my own vaccine slot on the Veneto / ULSS 6 Euganea
-> (Padova) portal, when appointments for my age group were released in small batches and gone within
-> minutes — it got me one of the first slots in my cohort in Padova. The original code was tied to a
-> portal that no longer exists. **This is a clean reimplementation I published later** (see the commit
-> dates); the portal URL and the page selectors are configurable so the approach can be pointed at
-> another portal.
+A bit of history: I first wrote this in 2021 to book my own vaccine slot on the Veneto / ULSS 6 Euganea
+(Padova) portal, back when slots for my age group dropped in small batches and vanished within minutes.
+It got me one of the first slots in my cohort in Padova. The original code was tied to a portal that
+doesn't exist anymore, so this is a clean rewrite I published later (you can see that from the commit
+dates). The portal URL and the page selectors are configurable, so the same approach can point at a
+different portal.
 
 ## How it works
 
-```
-login (codice fiscale + tessera sanitaria)
-      │
-      ▼
-poll the slots page every POLL_SECONDS ──► any slot in LOCATION? ──no──► wait ──┐
-      ▲                                            │yes                          │
-      └────────────────────────────────────────────┼─────────────────────────────┘
-                                                    ▼
-                                    book the earliest slot ──► notify (log + optional Telegram)
-```
+It logs in with your codice fiscale and health card number, then polls the slots page every
+`POLL_SECONDS`. As soon as a slot shows up in your chosen location it books the earliest one and lets you
+know, in the log and optionally over Telegram.
 
-- **`portal.py`** drives the site with Selenium: `login()`, `find_slots()` and `book()`. All the
-  site‑specific CSS selectors live in one `Selectors` dataclass so they are easy to adapt.
-- **`app.py`** is the polling loop: it checks the offered slots, books the earliest one in your
-  preferred location, and stops once it succeeds.
-- **`notifier.py`** logs the result and, if a Telegram bot is configured, sends you a message.
+The code is in three small pieces. `portal.py` drives the site with Selenium (`login()`, `find_slots()`
+and `book()`), with all the site-specific CSS selectors kept together in one `Selectors` dataclass so
+they're easy to change. `app.py` is the polling loop. `notifier.py` logs the result and, if you've set up
+a Telegram bot, sends you a message.
 
-It books only your own appointment, for which you are eligible — it just removes the manual refreshing.
+It only books your own appointment, the one you're entitled to. All it really does is take the manual
+refreshing off your hands.
 
 ## Setup
 
-Requirements: Python 3.10+, Google Chrome. `webdriver-manager` fetches a matching ChromeDriver
-automatically.
+You need Python 3.10+ and Google Chrome. `webdriver-manager` grabs a matching ChromeDriver for you.
 
 ```bash
 pip install -r requirements.txt
 cp .env.example .env      # then fill it in
 ```
 
-Fill `.env` with your `CODICE_FISCALE` and `HEALTH_CARD`, the `PORTAL_URL`, and your preferred
-`LOCATION`. These are read from the environment and never committed (`.env` is git‑ignored).
+Put your `CODICE_FISCALE` and `HEALTH_CARD` in `.env`, along with the `PORTAL_URL` and your preferred
+`LOCATION`. These are read from the environment and never committed (`.env` is git-ignored).
 
 ## Run
 
@@ -53,16 +45,16 @@ python -m vaccine_bot --once     # check once and exit
 
 ## Configuration
 
-| Variable | Default | Description |
+| Variable | Default | What it is |
 |---|---|---|
-| `CODICE_FISCALE` | – | Your tax code, used to log in |
-| `HEALTH_CARD` | – | Health‑card number (tessera sanitaria) |
-| `PORTAL_URL` | Veneto portal | Booking portal to drive |
-| `LOCATION` | `Padova` | Preferred hub / city to book in |
+| `CODICE_FISCALE` | (none) | Your tax code, used to log in |
+| `HEALTH_CARD` | (none) | Health card number (tessera sanitaria) |
+| `PORTAL_URL` | Veneto portal | The booking portal to drive |
+| `LOCATION` | `Padova` | Preferred hub or city to book in |
 | `EARLIEST_ONLY` | `true` | Book the earliest slot within `LOCATION` |
 | `POLL_SECONDS` | `60` | Seconds between checks |
 | `HEADLESS` | `false` | Run Chrome without a window |
-| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | – | Optional booking notification |
+| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | (none) | Optional booking notification |
 
 ## Tests
 
@@ -72,14 +64,13 @@ pytest
 
 ## Notes
 
-- The original Veneto portal is offline, so the selectors in `portal.py` are illustrative and must be
-  adapted to the live markup of whatever portal you target.
-- Automating a public booking system may be against its terms; this was personal use to book a slot I
-  was entitled to. Use responsibly.
+The original Veneto portal is gone, so the selectors in `portal.py` are just illustrative and you'd need
+to adapt them to whatever portal you point it at. Automating a public booking system can also be against
+its terms; this was personal use, to book a slot I was entitled to, so use it responsibly.
 
-## Tech stack
+## Built with
 
-Python · Selenium · webdriver-manager
+Python, Selenium and webdriver-manager.
 
 ## License
 
