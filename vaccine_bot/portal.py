@@ -17,6 +17,11 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from selenium import webdriver
+from selenium.common.exceptions import (
+    NoSuchElementException,
+    StaleElementReferenceException,
+    TimeoutException,
+)
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
@@ -42,6 +47,7 @@ class Selectors:
     slot_book_button: str = "button.book"
     confirm_button: str = "button.confirm"
     confirmation_banner: str = ".booking-confirmed"
+    booking_error: str = ".booking-error"  # shown when the slot was taken first
 
 
 class VaccinePortal:
@@ -52,7 +58,14 @@ class VaccinePortal:
         if headless:
             options.add_argument("--headless=new")
         options.add_argument("--window-size=1280,900")
-        self.driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+        try:
+            driver_path = ChromeDriverManager().install()
+        except Exception as exc:
+            raise RuntimeError(
+                "Could not download a matching ChromeDriver. Check your network connection "
+                "and that Google Chrome is installed."
+            ) from exc
+        self.driver = webdriver.Chrome(service=Service(driver_path), options=options)
         self.wait = WebDriverWait(self.driver, 20)
 
     # -- lifecycle ------------------------------------------------------------
@@ -80,13 +93,21 @@ class VaccinePortal:
         self.wait.until(ec.presence_of_element_located((By.CSS_SELECTOR, s.slot_row + ", " + s.confirmation_banner)))
         log.info("Logged in")
 
+    def reload(self) -> None:
+        """Reload the slots page so slots that open after startup become visible."""
+        self.driver.refresh()
+
     def find_slots(self, location: str | None = None) -> list[Slot]:
         """Read the slots currently offered, optionally filtered by hub/location."""
         s = self.selectors
         slots: list[Slot] = []
         for row in self.driver.find_elements(By.CSS_SELECTOR, s.slot_row):
-            hub = row.find_element(By.CSS_SELECTOR, s.slot_hub).text.strip()
-            raw = row.get_attribute(s.slot_datetime_attr)
+            try:
+                hub = row.find_element(By.CSS_SELECTOR, s.slot_hub).text.strip()
+                raw = row.get_attribute(s.slot_datetime_attr)
+            except (StaleElementReferenceException, NoSuchElementException):
+                # Row vanished while we were reading it; treat it as gone.
+                continue
             if not raw:
                 continue
             if location and location.lower() not in hub.lower():
@@ -100,13 +121,29 @@ class VaccinePortal:
         return slots
 
     def book(self, slot: Slot) -> bool:
-        """Confirm `slot`. Returns True once the confirmation banner appears."""
+        """Confirm `slot`.
+
+        Returns True once the confirmation banner appears, or False if the slot was
+        taken/removed before we could book it so the caller can retry another slot.
+        """
         s = self.selectors
         for row in self.driver.find_elements(By.CSS_SELECTOR, s.slot_row):
-            raw = row.get_attribute(s.slot_datetime_attr)
+            try:
+                raw = row.get_attribute(s.slot_datetime_attr)
+            except StaleElementReferenceException:
+                continue
             if raw and datetime.fromisoformat(raw) == slot.when:
-                row.find_element(By.CSS_SELECTOR, s.slot_book_button).click()
-                self.wait.until(ec.element_to_be_clickable((By.CSS_SELECTOR, s.confirm_button))).click()
-                self.wait.until(ec.presence_of_element_located((By.CSS_SELECTOR, s.confirmation_banner)))
-                return True
+                try:
+                    row.find_element(By.CSS_SELECTOR, s.slot_book_button).click()
+                    self.wait.until(ec.element_to_be_clickable((By.CSS_SELECTOR, s.confirm_button))).click()
+                    # Wait for success or the "slot taken" error, whichever shows first.
+                    self.wait.until(
+                        ec.presence_of_element_located(
+                            (By.CSS_SELECTOR, s.confirmation_banner + ", " + s.booking_error)
+                        )
+                    )
+                except (StaleElementReferenceException, NoSuchElementException, TimeoutException):
+                    # The slot disappeared mid-booking; report it as gone.
+                    return False
+                return bool(self.driver.find_elements(By.CSS_SELECTOR, s.confirmation_banner))
         return False

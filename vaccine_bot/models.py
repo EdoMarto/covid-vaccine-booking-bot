@@ -12,7 +12,6 @@ class Slot:
 
     hub: str  # vaccination centre
     when: datetime
-    dose: int = 1
 
     def __str__(self) -> str:
         return f"{self.when:%d/%m/%Y %H:%M} @ {self.hub}"

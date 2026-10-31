@@ -23,10 +23,13 @@ def run(config: Config, once: bool = False) -> bool:
         portal.login(config.codice_fiscale, config.health_card)
 
         while True:
-            slots = portal.find_slots(config.location if config.earliest_only else None)
+            # Reload the slots page so slots that open after startup are picked up.
+            portal.reload()
+            slots = portal.find_slots(config.location)
             log.info("%d slot(s) available", len(slots))
 
             if slots:
+                # Slots come back sorted by time; take the earliest match.
                 slot = slots[0]
                 if portal.book(slot):
                     notifier.notify(f"✅ Vaccine slot booked: {slot}")
